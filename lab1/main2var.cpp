@@ -2,46 +2,48 @@
 #include <cmath>
 #include <mpi/mpi.h>
 using namespace std;
-#define N  527
+#define N  5110
 #define E 0.0005
 #define T 0.0001
 
 
-double* Multiplyer_NNxN (const double *A, const double *B, double *C, int NLines, int FirstLine){
+double* Multiplyer_NNxN (const double *A, const double *B, double *C, int NLines){
     for (int i = 0; i < NLines; ++i) {
         *(C + i) = 0.0f;
         for (int j = 0; j < N; ++j)
-            *(C + i) += *(A + j + N * i) * *(B + i + FirstLine);
+            *(C + i) += *(A + j + N * i) * *(B + j);
     }
 
     return C;
 }
 
 
-bool chek (const double* A, const double* B, int NLines, int FirstLine){
+bool check (const double* A, const double* B, int NLines, int FirstLine){
     double temp[NLines];
+    double B_glob = 0;//all B_m;
     double B_m = 0;
+    double A_glob = 0;
     double A_M = 0;
     for (int i = 0; i < NLines; ++i)
         temp[i] =  - *(B + i + FirstLine) + *(A + i);
-
     for (int i = 0; i <  NLines; ++i){
         B_m += B[i + FirstLine] * B[i + FirstLine];
         A_M += temp[i] * temp[i];
     }
+    MPI_Allreduce(&B_m,&B_glob,1,MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-    B_m /= NLines;
-    B_m = sqrt (B_m);
+    B_m = sqrt (B_glob);
 
-    A_M /= NLines;
-    A_M = sqrt(A_M);
+    MPI_Allreduce(&A_M, &A_glob,1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+    A_M = sqrt(A_glob);
     return (A_M / B_m) >= E;
 }
 
 
 void  iter (double *X, const double *ptr, const double *B, int NLines, int FirstLine){
     for (int i = 0; i < NLines; ++i)
-        *(X + FirstLine + i) = *(X + FirstLine + i) - T * (*(ptr + i) - *(B + i));
+        *(X + FirstLine + i) = *(X + FirstLine + i) - T * (*(ptr + i) - *(B + FirstLine + i));
 
 
 }
@@ -91,7 +93,6 @@ int main(int argc, char *argv[]) {
 
     double B [N];//B vector
     double X_o [N];//result vector in proc
-    double X [N];//result vector in task
     double ptr [NLines];//ptr for multy and chek func
 
     //buffers init block
@@ -104,22 +105,24 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    for (int i = 0; i < N; ++i) {
-        B[i] = N + 1;
+    for (int i = 0; i < N; ++i)
         X_o[i] = 0;
+    for (int i = FirstLine; i < FirstLine + NLines; ++i) {
+        B[i] = N + 1;
+        ptr[i - FirstLine] = 0;
     }
 
-    while (chek(Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], NLines, FirstLine), &B[0], NLines, FirstLine))
+
+    while(check(Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], NLines), &B[0], NLines, FirstLine)){
         iter(&X_o[0], &ptr[0], &B[0], NLines, FirstLine);
-
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Allgatherv(X_o, CountEl[ProcRank], MPI_DOUBLE, X_o, CountEl, shift, MPI_DOUBLE, MPI_COMM_WORLD);
+        MPI_Barrier(MPI_COMM_WORLD);
+        MPI_Allgatherv(X_o, CountEl[ProcRank], MPI_DOUBLE, X_o, CountEl, shift, MPI_DOUBLE, MPI_COMM_WORLD);
+    }
 
     if (LastProc)
         for (double i : X_o)
             cout << i <<" ";
-        
+
     MPI_Finalize();
     cout<<endl;
     return 0;

@@ -30,7 +30,7 @@ bool check (const double* A, const double* B, int Number_Of_Lines, int FirstLine
 }
 
 
-void  iter (double *X, const double *ptr, const double *B, int NLines, int FirstLine){
+void  iteration (double *X, const double *ptr, const double *B, int NLines, int FirstLine){//find next X value
     for (int i = 0; i < NLines; ++i)
         X[FirstLine + i] = X[FirstLine + i] - T * (ptr[i] - B[i + FirstLine]);
 }
@@ -59,9 +59,7 @@ int main(int argc, char *argv[]) {
 
     //buff of number of elements for allgatherv func
     int CountEl [ProcNum];
-    int id = div_up(N, ProcNum);
-    for (int i = 0; i < ProcNum - 1; ++i)
-        CountEl[i]  = id;
+    fill(CountEl, CountEl + ProcNum - 1, div_up(N, ProcNum));
     CountEl[ProcNum - 1] = N - div_up(N, ProcNum) * (ProcNum - 1);
 
     //number of first line in matrix from big matrix
@@ -69,15 +67,11 @@ int main(int argc, char *argv[]) {
     if (LastProc)
         FirstLine = N - Number_Of_Lines;
 
-
-    double *matrix_A = nullptr;
-    matrix_A = new double [N * Number_Of_Lines];
-
     int shift [ProcNum];//displs for allgather
     for (int i = 0; i < ProcNum; ++i)
-        shift[i] = 0 + div_up(N, ProcNum) * i;
+        shift[i] = div_up(N, ProcNum) * i;
 
-
+    double *matrix_A = new double [N * Number_Of_Lines];//matrix A
     double *B = new double [N];//B vector
     double *X_o = new double [N];//result vector in proc & task
     double *ptr = new double [Number_Of_Lines];//ptr for multy and chek func
@@ -92,17 +86,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    for (int i = 0; i < N; ++i)
-        X_o[i] = 0;
-    for (int i = FirstLine; i < FirstLine + Number_Of_Lines; ++i) {
-        B[i] = N + 1;
-        ptr[i - FirstLine] = 0;
-    }
-
+    fill(X_o, X_o + N, 0);
+    fill(B + FirstLine, B + FirstLine + Number_Of_Lines, N + 1);
+    fill(ptr, ptr + Number_Of_Lines, 0);
 
     do{
         Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], Number_Of_Lines);
-        iter(&X_o[0], &ptr[0], &B[0], Number_Of_Lines, FirstLine);
+        iteration(&X_o[0], &ptr[0], &B[0], Number_Of_Lines, FirstLine);
         MPI_Allgatherv(X_o, CountEl[ProcRank], MPI_DOUBLE, X_o, CountEl, shift, MPI_DOUBLE, MPI_COMM_WORLD);
     } while (check(&ptr[0], &B[0], Number_Of_Lines, FirstLine));
 
@@ -111,6 +101,5 @@ int main(int argc, char *argv[]) {
             cout << X_o[i] <<" ";
 
     MPI_Finalize();
-    cout<<endl;
     return 0;
 }

@@ -2,7 +2,7 @@
 #include <cmath>
 #include <mpi/mpi.h>
 using namespace std;
-#define N  5110 //num of lines in all processes
+#define N  500 //num of lines in all processes
 #define E 0.0005
 #define T 0.0001
 
@@ -13,13 +13,11 @@ double* Multiplyer_NNxN (const double *A, const double *B, double *C, int Number
         for (int j = 0; j < N; ++j)
             C[i] += A[j + N * i] * B[j];
     }
-
     return C;
 }
 
 
-bool check (const double* A, const double* B, int Number_Of_Lines, int FirstLine){
-    double temp[Number_Of_Lines];
+bool check (const double* A, const double* B, double* temp, int Number_Of_Lines, int FirstLine){
     double B_m = 0;
     double A_M = 0;
     for (int i = 0; i < Number_Of_Lines; ++i)
@@ -29,20 +27,13 @@ bool check (const double* A, const double* B, int Number_Of_Lines, int FirstLine
         B_m += B[i + FirstLine] * B[i + FirstLine];
         A_M += temp[i] * temp[i];
     }
-
-    B_m /= Number_Of_Lines;
-    B_m = sqrt (B_m);
-
-    A_M /= Number_Of_Lines;
-    A_M = sqrt(A_M);
-    return (A_M / B_m) >= E;
+    return (A_M / B_m) >= E * E;
 }
 
 
-void  iter (double *X, const double *ptr, const double *B, int Number_Of_Lines, int FirstLine){
+void  iteration (double *X, const double *ptr, const double *B, int Number_Of_Lines, int FirstLine){//find next X value
     for (int i = 0; i < Number_Of_Lines; ++i)
         X[FirstLine + i] = X[FirstLine + i] - T * (ptr[i] - B[i + FirstLine]);
-
 }
 
 
@@ -69,9 +60,7 @@ int main(int argc, char *argv[]) {
 
     //buff of number of elements for allgatherv func
     int CountEl [ProcNum];
-    int id = div_up(N, ProcNum);
-    for (int i = 0; i < ProcNum - 1; ++i)
-        CountEl[i]  = id;
+    fill(CountEl, CountEl + ProcNum - 1, div_up(N, ProcNum));
     CountEl[ProcNum - 1] = N - div_up(N, ProcNum) * (ProcNum - 1);
 
     //number of first line in matrix from big matrix
@@ -79,17 +68,15 @@ int main(int argc, char *argv[]) {
     if (LastProc)
         FirstLine = N - Number_Of_Lines;
 
-
-    double *matrix_A = nullptr;
-    matrix_A = new double [N * Number_Of_Lines];
-
     int shift [ProcNum];//displs for allgather
     for (int i = 0; i < ProcNum; ++i)
-        shift[i] = 0 + div_up(N, ProcNum) * i;
+        shift[i] = div_up(N, ProcNum) * i;
 
+    double *matrix_A = new double [N * Number_Of_Lines];//matrix A
     double *B = new double [N];//B vector
     double *X_o = new double [N];//result vector in proc & task
     double *ptr = new double [Number_Of_Lines];//ptr for multy and chek func
+    double *temp = new double [Number_Of_Lines];
 
     //buffers init block
     for (int i = 0; i < Number_Of_Lines; ++i) {
@@ -100,13 +87,14 @@ int main(int argc, char *argv[]) {
                 matrix_A[i * N + j] = 1.0f;
         }
     }
+    fill(X_o, X_o + N, 0);
+    fill(temp, temp + Number_Of_Lines, 0);
+    fill(B + FirstLine, B + FirstLine + Number_Of_Lines, N + 1);
+    fill(ptr, ptr + Number_Of_Lines, 0);
 
-    for (int i = 0; i < N; ++i) {
-        B[i] = N + 1;
-        X_o[i] = 0;
-    }
-    while  (check(Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], Number_Of_Lines), &B[0], Number_Of_Lines, FirstLine)) {
-        iter(&X_o[0], &ptr[0], &B[0], Number_Of_Lines, FirstLine);
+    //calculations block
+    while  (check(Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], Number_Of_Lines), &B[0], &temp[0], Number_Of_Lines, FirstLine)) {
+        iteration(&X_o[0], &ptr[0], &B[0], Number_Of_Lines, FirstLine);
         MPI_Allgatherv(X_o, CountEl[ProcRank], MPI_DOUBLE, X_o, CountEl, shift, MPI_DOUBLE, MPI_COMM_WORLD);
     }
 
@@ -115,6 +103,5 @@ int main(int argc, char *argv[]) {
             cout <<X_o[i]<<" ";
 
     MPI_Finalize();
-    cout<<endl;
     return 0;
 }

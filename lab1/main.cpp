@@ -17,19 +17,16 @@ double* Multiplyer_NNxN (const double *A, const double *B, double *C, int Number
 }
 
 
-bool check (const double* A, const double* B, double* temp, int Number_Of_Lines, int FirstLine){
-    double B_m = 0;
-    double A_M = 0;
-    for (int i = 0; i < Number_Of_Lines; ++i)
-        temp[i] =  - B[i + FirstLine] + A[i];
-
-    for (int i = 0; i < Number_Of_Lines; ++i){
-        B_m += B[i + FirstLine] * B[i + FirstLine];
-        A_M += temp[i] * temp[i];
+bool check (const double* A, const double* B, int Number_Of_Lines, int FirstLine){
+    double SUMM = 0;
+    double ptr;
+    for (int i = 0; i < Number_Of_Lines; ++i) {
+        ptr = A[i] / B[FirstLine + i];
+        SUMM += ptr * ptr - 2 * ptr + 1;
     }
-    return (A_M / B_m) >= E * E;
+    MPI_Allreduce(&SUMM, &SUMM,1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    return SUMM >= E * E;
 }
-
 
 void  iteration (double *X, const double *ptr, const double *B, int Number_Of_Lines, int FirstLine){//find next X value
     for (int i = 0; i < Number_Of_Lines; ++i)
@@ -76,7 +73,6 @@ int main(int argc, char *argv[]) {
     double *B = new double [N];//B vector
     double *X_o = new double [N];//result vector in proc & task
     double *ptr = new double [Number_Of_Lines];//ptr for multy and chek func
-    double *temp = new double [Number_Of_Lines];
 
     //buffers init block
     for (int i = 0; i < Number_Of_Lines; ++i) {
@@ -88,15 +84,15 @@ int main(int argc, char *argv[]) {
         }
     }
     fill(X_o, X_o + N, 0);
-    fill(temp, temp + Number_Of_Lines, 0);
     fill(B + FirstLine, B + FirstLine + Number_Of_Lines, N + 1);
     fill(ptr, ptr + Number_Of_Lines, 0);
 
     //calculations block
-    while  (check(Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], Number_Of_Lines), &B[0], &temp[0], Number_Of_Lines, FirstLine)) {
+    do{
+        Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], Number_Of_Lines);
         iteration(&X_o[0], &ptr[0], &B[0], Number_Of_Lines, FirstLine);
         MPI_Allgatherv(X_o, CountEl[ProcRank], MPI_DOUBLE, X_o, CountEl, shift, MPI_DOUBLE, MPI_COMM_WORLD);
-    }
+    } while (check(&ptr[0], &B[0], Number_Of_Lines, FirstLine));
 
     if (LastProc)
         for (int i = 0; i < N; ++i)

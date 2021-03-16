@@ -2,47 +2,46 @@
 #include <cmath>
 #include <mpi/mpi.h>
 using namespace std;
-#define N  10207
+#define N  5110 //num of lines in all processes
 #define E 0.0005
 #define T 0.0001
 
 
-double* Multiplyer_NNxN (const double *A, const double *B, double *C, int NLines){
-    for (int i = 0; i < NLines; ++i) {
-        *(C + i) = 0.0f;
+double* Multiplyer_NNxN (const double *A, const double *B, double *C, int Number_Of_Lines){
+    for (int i = 0; i < Number_Of_Lines; ++i) {
+        C[i] = 0.0f;
         for (int j = 0; j < N; ++j)
-            *(C + i) += *(A + j + N * i) * *(B + j);
+            C[i] += A[j + N * i] * B[j];
     }
 
     return C;
 }
 
 
-bool chek (const double* A, const double* B, int NLines, int FirstLine){
-    double temp[NLines];
+bool check (const double* A, const double* B, int Number_Of_Lines, int FirstLine){
+    double temp[Number_Of_Lines];
     double B_m = 0;
     double A_M = 0;
-    for (int i = 0; i < NLines; ++i)
-        temp[i] =  - *(B + i + FirstLine) + *(A + i);
+    for (int i = 0; i < Number_Of_Lines; ++i)
+        temp[i] =  - B[i + FirstLine] + A[i];
 
-    for (int i = 0; i <  NLines; ++i){
+    for (int i = 0; i < Number_Of_Lines; ++i){
         B_m += B[i + FirstLine] * B[i + FirstLine];
         A_M += temp[i] * temp[i];
     }
 
-    B_m /= NLines;
+    B_m /= Number_Of_Lines;
     B_m = sqrt (B_m);
 
-    A_M /= NLines;
+    A_M /= Number_Of_Lines;
     A_M = sqrt(A_M);
     return (A_M / B_m) >= E;
 }
 
 
-void  iter (double *X, const double *ptr, const double *B, int NLines, int FirstLine){
-    for (int i = 0; i < NLines; ++i)
-        *(X + FirstLine + i) = *(X + FirstLine + i) - T * (*(ptr + i) - *(B + i));
-
+void  iter (double *X, const double *ptr, const double *B, int Number_Of_Lines, int FirstLine){
+    for (int i = 0; i < Number_Of_Lines; ++i)
+        X[FirstLine + i] = X[FirstLine + i] - T * (ptr[i] - B[i + FirstLine]);
 
 }
 
@@ -63,9 +62,9 @@ int main(int argc, char *argv[]) {
     bool LastProc = false;
     if (ProcRank == ProcNum - 1)
         LastProc = true;
-    int NLines = div_up(N, ProcNum);
+    int Number_Of_Lines = div_up(N, ProcNum);//Num of lines in each proc
     if (LastProc) {//number of lines in proc, last proc less lines then others
-        NLines = N - div_up(N, ProcNum) * (ProcNum - 1);
+        Number_Of_Lines = N - div_up(N, ProcNum) * (ProcNum - 1);
     }
 
     //buff of number of elements for allgatherv func
@@ -76,28 +75,26 @@ int main(int argc, char *argv[]) {
     CountEl[ProcNum - 1] = N - div_up(N, ProcNum) * (ProcNum - 1);
 
     //number of first line in matrix from big matrix
-    int FirstLine = NLines * ProcRank;
+    int FirstLine = Number_Of_Lines * ProcRank;
     if (LastProc)
-        FirstLine = N - NLines;
+        FirstLine = N - Number_Of_Lines;
 
 
     double *matrix_A = nullptr;
-    matrix_A = new double [N * NLines];
+    matrix_A = new double [N * Number_Of_Lines];
 
     int shift [ProcNum];//displs for allgather
     for (int i = 0; i < ProcNum; ++i)
         shift[i] = 0 + div_up(N, ProcNum) * i;
 
-
-    double B [N];//B vector
-    double X_o [N];//result vector in proc
-    double X [N];//result vector in task
-    double ptr [NLines];//ptr for multy and chek func
+    double *B = new double [N];//B vector
+    double *X_o = new double [N];//result vector in proc & task
+    double *ptr = new double [Number_Of_Lines];//ptr for multy and chek func
 
     //buffers init block
-    for (int i = 0; i < NLines; ++i) {
+    for (int i = 0; i < Number_Of_Lines; ++i) {
         for (int j = 0; j < N; ++j) {
-            if (i == j - NLines * ProcRank)
+            if (i == j - Number_Of_Lines * ProcRank)
                 matrix_A[i * N + j] = 2.0f;
             else
                 matrix_A[i * N + j] = 1.0f;
@@ -108,16 +105,14 @@ int main(int argc, char *argv[]) {
         B[i] = N + 1;
         X_o[i] = 0;
     }
-
-    while  (chek(Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], NLines), &B[0], NLines, FirstLine)) {
-        iter(&X_o[0], &ptr[0], &B[0], NLines, FirstLine);
-        MPI_Barrier(MPI_COMM_WORLD);
+    while  (check(Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], Number_Of_Lines), &B[0], Number_Of_Lines, FirstLine)) {
+        iter(&X_o[0], &ptr[0], &B[0], Number_Of_Lines, FirstLine);
         MPI_Allgatherv(X_o, CountEl[ProcRank], MPI_DOUBLE, X_o, CountEl, shift, MPI_DOUBLE, MPI_COMM_WORLD);
     }
 
     if (LastProc)
-        for (double i : X_o)
-            cout << i <<" ";
+        for (int i = 0; i < N; ++i)
+            cout <<X_o[i]<<" ";
 
     MPI_Finalize();
     cout<<endl;

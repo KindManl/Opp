@@ -34,7 +34,7 @@ int main(){
         X_o[i] = 0;
     }
 
-    #pragma parallel for
+    #pragma omp parallel
     do{
     #pragma omp for
         for (int i = 0; i < N; ++i) {

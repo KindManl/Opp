@@ -131,6 +131,7 @@ int main(int argc, char *argv[]) {
     MPI_Type_commit(&COLUMN);
     // MPI_Scatter(matrix_B, 1, COLUMN, segment_B, Columns * B, MPI_INT, 0, colComm);
 
+
     MPI_Type_free(&COLUMN);
 
 

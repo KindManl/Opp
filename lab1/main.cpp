@@ -17,7 +17,8 @@ double* Multiplyer_NNxN (const double *A, const double *B, double *C, int Number
 }
 
 
-bool check (const double* A, const double* B, int Number_Of_Lines, int FirstLine){
+bool check (const double* A, const double* B, int Number_Of_Lines, int FirstLine, int rank){
+    cout  << "r "<< rank << "r ";
     double SUMM = 0;
     double ptr;
     for (int i = 0; i < Number_Of_Lines; ++i) {
@@ -92,12 +93,12 @@ int main(int argc, char *argv[]) {
         Multiplyer_NNxN(&matrix_A[0], &X_o[0], &ptr[0], Number_Of_Lines);
         iteration(&X_o[0], &ptr[0], &B[0], Number_Of_Lines, FirstLine);
         MPI_Allgatherv(X_o, CountEl[ProcRank], MPI_DOUBLE, X_o, CountEl, shift, MPI_DOUBLE, MPI_COMM_WORLD);
-    } while (check(&ptr[0], &B[0], Number_Of_Lines, FirstLine));
+    } while (check(&ptr[0], &B[0], Number_Of_Lines, FirstLine, ProcRank));
 
     if (LastProc)
         for (int i = 0; i < N; ++i)
             cout <<X_o[i]<<" ";
-
+    cout << endl;
     MPI_Finalize();
     return 0;
 }

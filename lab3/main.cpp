@@ -5,9 +5,13 @@
 using namespace std;
 
 
-bool check_size(int A, int B, int C, int D){
+bool check_size(int A, int B, int C, int D, int ProcNum){
     if ((A < 0) || (B < 0) || (C < 0) || (D < 0)){
         cout << "\nMatrix size error\n";
+        return false;
+    }
+    if ((A % ProcNum != 0) || (D % ProcNum)){
+        cout << "\n A and D should devide on procnum";
         return false;
     }
     if (B != C){
@@ -18,12 +22,12 @@ bool check_size(int A, int B, int C, int D){
 }
 
 
-bool AllocData (int* A, int* B, int* C, int* D){
+bool AllocData (int* A, int* B, int* C, int* D, int ProcNum){
     cout << "enter size of matrix 1" << endl;
     cin >> *A >> *B;
     cout << "enter size of matrix 2" << endl;
     cin >> *C >> *D;
-    return check_size(*A, *B, *C, *D);
+    return check_size(*A, *B, *C, *D, ProcNum);
 }
 
 
@@ -46,15 +50,25 @@ void PrintMatrix (int * matrix, int A, int B){
 
 void MultyMatrix (const int * A, const int * B, int * C, int a, int b, int c){
     for (int k = 0; k < a; ++k)
-    for (int i = 0; i < c; ++i)
-        for (int j = 0; j < b; ++j)
-            C[k * c + i] += A[k * b + j] * B[j * c + i];
+        for (int i = 0; i < c; ++i)
+            for (int j = 0; j < b; ++j)
+                C[k * c + i] += A[k * b + j] * B[j * c + i];
 }
 
+
 void CopyMatrix (const int * A, int * B, int a, int b){
-    cout << "h";
     for (int i = 0; i < a * b; ++i)
         B[i] = A[i];
+}
+
+
+void Transposition (int * A, int a, int b){//a 5 b 6
+    int * tmp = new int [a * b];
+    for (int i = 0; i < b; ++i)
+        for (int j = 0; j < a; ++j)
+            tmp[i * a + j] = A[i + j * b];
+    CopyMatrix(tmp, A, a, b);
+    delete[] tmp;
 }
 
 
@@ -72,14 +86,14 @@ int main(int argc, char *argv[]) {
     int reorder = 0;
     int ProcNum, ProcRank;
 
-    MPI_Comm_size (MPI_COMM_WORLD, &ProcNum);
-    MPI_Comm_rank (MPI_COMM_WORLD, &ProcRank);
+    MPI_Comm_size(MPI_COMM_WORLD, &ProcNum);
+    MPI_Comm_rank(MPI_COMM_WORLD, &ProcRank);
 
     MPI_Dims_create(ProcNum, 2, dims);
     MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, reorder, &BaseComm);
     MPI_Cart_coords(BaseComm, ProcRank, 2, coords);
     MPI_Comm_split(BaseComm, coords[1], coords[0], &rowComm);
-    MPI_Comm_split(BaseComm, coords[0], coords[1], &colComm); //make smthnk with this shit
+    MPI_Comm_split(BaseComm, coords[0], coords[1], &colComm);
 
     int *matrix_A = NULL;
     int *matrix_B = NULL;
@@ -87,10 +101,10 @@ int main(int argc, char *argv[]) {
     int *segment_A = NULL;
     int *segment_B = NULL;
     int *segment_C = NULL;
-    int A, B, C, D, Rows, Columns, tmp [3];
+    int A, B, C, D, Rows, Columns, tmp[3];
 
     if (ProcRank == 0) {
-        if (!AllocData(&A, &B, &C, &D)){
+        if (!AllocData(&A, &B, &C, &D, ProcNum)) {
             MPI_Abort(MPI_COMM_WORLD, 1);
             return 0;
         }
@@ -103,6 +117,12 @@ int main(int argc, char *argv[]) {
         fill_matrix(matrix_A, A, B);
         fill_matrix(matrix_B, C, D);
 
+        cout << "\nMatrix A:";
+        PrintMatrix(matrix_A, A, B);
+        cout << "\nMatrix B:";
+        PrintMatrix(matrix_B, C, D);
+        Transposition(matrix_B, C, D);
+
         tmp[0] = A;
         tmp[1] = D;
         tmp[2] = B;
@@ -113,52 +133,52 @@ int main(int argc, char *argv[]) {
     D = tmp[1];
     B = tmp[2];
 
-    Rows = A / dims[0];//Rows & columns of segments in procs
-    Columns = D / dims[1];
+    Rows = A / dims[1];//Rows & columns of segments in procs
+    Columns = D / dims[0];
 
-    cout << "\n rows = " << Rows << " col = " << Columns << " 0 = " << dims[0] << " 1 = " << dims[1] << " r = " << ProcRank << endl;
     segment_A = new int[Rows * B];
     segment_B = new int[B * Columns];
     segment_C = new int[Rows * Columns];
+    fill(segment_C, segment_C + Rows * Columns, 0);
 
     //scate matrix A with rows
-    MPI_Scatter(matrix_A, A * B / dims[0], MPI_INT, segment_A, B * Rows, MPI_INT, 0, rowComm);
-    MPI_Bcast(segment_A, Rows * B, MPI_INT, 0, colComm);
+    if (coords[0] == 0)
+        MPI_Scatter(matrix_A, Rows * B, MPI_INT, segment_A, B * Rows, MPI_INT, 0, colComm);
+    MPI_Bcast(segment_A, Rows * B, MPI_INT, 0, rowComm);
 
     //scate matrix B with columns
-    MPI_Datatype COLUMN;
-    MPI_Type_vector(B, 1, D, MPI_INT, &COLUMN);
-    MPI_Type_commit(&COLUMN);
-    // MPI_Scatter(matrix_B, 1, COLUMN, segment_B, Columns * B, MPI_INT, 0, colComm);
+    if (coords[1] == 0) {
+        MPI_Scatter(matrix_B, B * Columns, MPI_INT, segment_B, B * Columns, MPI_INT, 0, rowComm);
+        Transposition(segment_B, Columns, B);
+    }
+    MPI_Bcast(segment_B, B * Columns, MPI_INT, 0, colComm);
 
+    MultyMatrix(segment_A, segment_B, segment_C, Rows, B, Columns);
 
-    MPI_Type_free(&COLUMN);
+    MPI_Datatype Receiver;
+    MPI_Datatype Receiver_elem;
+    MPI_Type_vector(Rows, Columns, D, MPI_INT, &Receiver_elem);
+    MPI_Type_create_resized(Receiver_elem, 0, Columns * sizeof(int), &Receiver);
+    MPI_Type_commit(&Receiver);
 
+    MPI_Gather(segment_C, Rows * Columns, MPI_INT, matrix_C, 1, Receiver, 0, BaseComm);
 
-    if (ProcRank == 1)
-        PrintMatrix(segment_A, Rows, B);
-    if (ProcRank == 0)
-        PrintMatrix(segment_A, Rows, B);
+    MPI_Type_free(&Receiver);
+    MPI_Type_free(&Receiver_elem);
 
-    //MultyMatrix(segment_A, segment_B, segment_C, Rows, B, Columns);
     if (ProcRank == 0) {
-        
-        cout << "\npro 0" << endl;
-        PrintMatrix(matrix_A, A, B);
-        //PrintMatrix(matrix_B, C, D);
-        //MultyMatrix(matrix_A, matrix_B, matrix_C, A, B, D);
-        //PrintMatrix(segment_C, Rows, Columns);
-        PrintMatrix(segment_A, Rows, B);
+        cout << "\nMatrix C:";
+        PrintMatrix(matrix_C, A, D);
     }
-    if (ProcRank == 1) {
-
-        cout << "\npro 1" << endl;
-        //PrintMatrix(matrix_A, A, B);
-        //PrintMatrix(matrix_B, C, D);
-        //MultyMatrix(matrix_A, matrix_B, matrix_C, A, B, D);
-        //PrintMatrix(segment_C, Rows, Columns);
-        PrintMatrix(segment_A, Rows, B);
-    }
+    delete[] matrix_A;
+    delete[] matrix_B;
+    delete[] matrix_C;
+    delete[] segment_A;
+    delete[] segment_B;
+    delete[] segment_C;
+    MPI_Comm_free(&rowComm);
+    MPI_Comm_free(&colComm);
+    MPI_Comm_free(&BaseComm);
     MPI_Finalize();
     return 0;
 }

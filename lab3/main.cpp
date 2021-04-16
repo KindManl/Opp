@@ -1,17 +1,21 @@
 #include <iostream>
 #include <mpi/mpi.h>
-#include <cmath>
-#include <time.h>
+
 using namespace std;
 
-
-bool check_size(int A, int B, int C, int D, int ProcNum){
+/*
+bool check_size(int A, int B, int C, int D, int ProcNumA, int ProcNumB){
     if ((A < 0) || (B < 0) || (C < 0) || (D < 0)){
         cout << "\nMatrix size error\n";
         return false;
     }
-    if ((A % ProcNum != 0) || (D % ProcNum)){
-        cout << "\n A and D should devide on procnum";
+
+    if ((A > 50) || (B > 50) || (C > 50) || (D > 50)){
+        cout << "\nMatrix size error\n";
+        return false;
+    }
+    if ((A % ProcNumA != 0) || (D % ProcNumB)){
+        cout << "\nA and D should divide on number of processes in each coordinates\n";
         return false;
     }
     if (B != C){
@@ -22,19 +26,19 @@ bool check_size(int A, int B, int C, int D, int ProcNum){
 }
 
 
-bool AllocData (int* A, int* B, int* C, int* D, int ProcNum){
-    cout << "enter size of matrix 1" << endl;
+bool AllocData (int* A, int* B, int* C, int* D, int ProcNumA, int ProcNumB ){
+    cout << "Enter both sizes of first matrix" << endl;
     cin >> *A >> *B;
-    cout << "enter size of matrix 2" << endl;
+    cout << "Enter both sizes of second matrix" << endl;
     cin >> *C >> *D;
-    return check_size(*A, *B, *C, *D, ProcNum);
+    return check_size(*A, *B, *C, *D, ProcNumA, ProcNumB);
 }
-
+*/
 
 void fill_matrix(int * matrix, int A, int B){
     srand(time(NULL));
     for (int i = 0; i < A * B; i++)
-        matrix[i] = 1 + rand() % 3;
+        matrix[i] = 1;
 }
 
 
@@ -48,7 +52,7 @@ void PrintMatrix (int * matrix, int A, int B){
 }
 
 
-void MultyMatrix (const int * A, const int * B, int * C, int a, int b, int c){
+void MultiMatrix (const int * A, const int * B, int * C, int a, int b, int c){
     for (int k = 0; k < a; ++k)
         for (int i = 0; i < c; ++i)
             for (int j = 0; j < b; ++j)
@@ -62,7 +66,7 @@ void CopyMatrix (const int * A, int * B, int a, int b){
 }
 
 
-void Transposition (int * A, int a, int b){//a 5 b 6
+void Transposition (int * A, int a, int b){
     int * tmp = new int [a * b];
     for (int i = 0; i < b; ++i)
         for (int j = 0; j < a; ++j)
@@ -104,11 +108,16 @@ int main(int argc, char *argv[]) {
     int A, B, C, D, Rows, Columns, tmp[3];
 
     if (ProcRank == 0) {
-        if (!AllocData(&A, &B, &C, &D, ProcNum)) {
+        A = 1000;
+        B = 1500;
+        C = 1500;
+        D = 1000;
+        /*
+        if (!AllocData(&A, &B, &C, &D, dims[1], dims[0])) {
             MPI_Abort(MPI_COMM_WORLD, 1);
             return 0;
         }
-
+        */
         matrix_A = new int[A * B];
         matrix_B = new int[C * D];
         matrix_C = new int[A * D];
@@ -116,11 +125,6 @@ int main(int argc, char *argv[]) {
         fill(matrix_C, matrix_C + A * D, 0);
         fill_matrix(matrix_A, A, B);
         fill_matrix(matrix_B, C, D);
-
-        cout << "\nMatrix A:";
-        PrintMatrix(matrix_A, A, B);
-        cout << "\nMatrix B:";
-        PrintMatrix(matrix_B, C, D);
         Transposition(matrix_B, C, D);
 
         tmp[0] = A;
@@ -153,7 +157,7 @@ int main(int argc, char *argv[]) {
     }
     MPI_Bcast(segment_B, B * Columns, MPI_INT, 0, colComm);
 
-    MultyMatrix(segment_A, segment_B, segment_C, Rows, B, Columns);
+    MultiMatrix(segment_A, segment_B, segment_C, Rows, B, Columns);
 
     MPI_Datatype Receiver;
     MPI_Datatype Receiver_elem;
@@ -161,15 +165,21 @@ int main(int argc, char *argv[]) {
     MPI_Type_create_resized(Receiver_elem, 0, Columns * sizeof(int), &Receiver);
     MPI_Type_commit(&Receiver);
 
-    MPI_Gather(segment_C, Rows * Columns, MPI_INT, matrix_C, 1, Receiver, 0, BaseComm);
+    int recvCounts[ProcNum];
+    fill(recvCounts, recvCounts + ProcNum, 1);
+    int displs[ProcNum];
+    for (int procRank = 0; procRank < ProcNum; ++procRank) {
+        MPI_Cart_coords(BaseComm, procRank, 2, coords);
+        displs[procRank] = dims[0] * Rows * coords[1] + coords[0];
+    }
+
+    MPI_Gatherv(segment_C, Rows * Columns, MPI_INT, matrix_C, recvCounts, displs, Receiver,
+                0, BaseComm);
+
+
 
     MPI_Type_free(&Receiver);
     MPI_Type_free(&Receiver_elem);
-
-    if (ProcRank == 0) {
-        cout << "\nMatrix C:";
-        PrintMatrix(matrix_C, A, D);
-    }
     delete[] matrix_A;
     delete[] matrix_B;
     delete[] matrix_C;

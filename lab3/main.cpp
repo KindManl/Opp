@@ -2,20 +2,19 @@
 #include <mpi/mpi.h>
 #include <cmath>
 #include <time.h>
-using namespace std;
 
 
 bool check_size(int A, int B, int C, int D, int ProcNum){
     if ((A < 0) || (B < 0) || (C < 0) || (D < 0)){
-        cout << "\nMatrix size error\n";
+        std::cout << "\nMatrix size error\n";
         return false;
     }
     if ((A % ProcNum != 0) || (D % ProcNum)){
-        cout << "\n A and D should devide on procnum";
+        std::cout << "\n A and D should devide on procnum";
         return false;
     }
     if (B != C){
-        cout << "\nB should be equal C\n";
+        std::cout << "\nB should be equal C\n";
         return false;
     }
     return true;
@@ -23,10 +22,10 @@ bool check_size(int A, int B, int C, int D, int ProcNum){
 
 
 bool AllocData (int* A, int* B, int* C, int* D, int ProcNum){
-    cout << "enter size of matrix 1" << endl;
-    cin >> *A >> *B;
-    cout << "enter size of matrix 2" << endl;
-    cin >> *C >> *D;
+    *A = 40;
+    *B = 50;
+    *C = 50;
+    *D = 50;
     return check_size(*A, *B, *C, *D, ProcNum);
 }
 
@@ -34,17 +33,17 @@ bool AllocData (int* A, int* B, int* C, int* D, int ProcNum){
 void fill_matrix(int * matrix, int A, int B){
     srand(time(NULL));
     for (int i = 0; i < A * B; i++)
-        matrix[i] = 1 + rand() % 3;
+        matrix[i] = rand() % 2;
 }
 
 
 void PrintMatrix (int * matrix, int A, int B){
     for (int i = 0; i < A; ++i){
-        cout << endl;
+        std::cout << std::endl;
         for (int j = 0; j < B; ++j)
-            cout << matrix[B * i + j] << " ";
+                std::cout << matrix[B * i + j] << " ";
     }
-    cout << endl;
+    std::cout << std::endl;
 }
 
 
@@ -113,13 +112,13 @@ int main(int argc, char *argv[]) {
         matrix_B = new int[C * D];
         matrix_C = new int[A * D];
 
-        fill(matrix_C, matrix_C + A * D, 0);
+        std::fill(matrix_C, matrix_C + A * D, 0);
         fill_matrix(matrix_A, A, B);
         fill_matrix(matrix_B, C, D);
 
-        cout << "\nMatrix A:";
+        std::cout << "\nMatrix A:";
         PrintMatrix(matrix_A, A, B);
-        cout << "\nMatrix B:";
+        std::cout << "\nMatrix B:";
         PrintMatrix(matrix_B, C, D);
         Transposition(matrix_B, C, D);
 
@@ -139,7 +138,7 @@ int main(int argc, char *argv[]) {
     segment_A = new int[Rows * B];
     segment_B = new int[B * Columns];
     segment_C = new int[Rows * Columns];
-    fill(segment_C, segment_C + Rows * Columns, 0);
+    std::fill(segment_C, segment_C + Rows * Columns, 0);
 
     //scate matrix A with rows
     if (coords[0] == 0)
@@ -167,7 +166,7 @@ int main(int argc, char *argv[]) {
     MPI_Type_free(&Receiver_elem);
 
     if (ProcRank == 0) {
-        cout << "\nMatrix C:";
+        std::cout << "\nMatrix C:";
         PrintMatrix(matrix_C, A, D);
     }
     delete[] matrix_A;

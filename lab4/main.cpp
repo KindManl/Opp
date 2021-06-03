@@ -8,19 +8,16 @@
 #define Nodes 64
 
 double finding_func(double x, double y, double z) {//finding func
-    //work
     return x * x + y * y + z * z;
 }
 
 
 double ro(double x, double y, double z) {//calculates ro from task
-    //work
     return 6 - A * finding_func(x, y, z);
 }
 
 
 double finding_func_inside(const int x, const int y, const int z, double* cube, const double incremention, const int ProcNum, const int ProcRank){//calculates values of finding func inside the cube
-    //must work
     double x_start = ProcRank * Nodes / ProcNum;
     int a, b, c, d, e, f;
     a = ((x - 1) * Nodes * Nodes) + (y * Nodes) + z;
@@ -36,20 +33,97 @@ double finding_func_inside(const int x, const int y, const int z, double* cube, 
     return 1.0 / ptr;
 }
 
-bool check(){
+
+bool check(int ProcNum, double *cube, double *cube_old){//check end of work
+    double diff_value;
+    double max_diff_value = 0;
+    int local_stop_flag, global_stop_flag;
+    for (int i = 0; i < (Nodes / ProcNum + 2) * Nodes * Nodes; ++i){//need borders to check
+        if (cube[i] != 0) {
+            diff_value = fabs(cube_old[i] - cube[i]);
+            if (diff_value > max_diff_value)
+                max_diff_value = diff_value;
+        }
+    }
+
+    if (max_diff_value < E) {
+        local_stop_flag = 0;
+    } else {
+        local_stop_flag = 1;
+    }
+    MPI_Allreduce(&local_stop_flag, &global_stop_flag, 1, MPI_INT, MPI_MAX,
+                  MPI_COMM_WORLD);
+    if (global_stop_flag == 0) {
+        return true;
+    }
     return false;
 }
 
+
+void board_calculations(int ProcNum, int ProcRank, double *cube, double incremention){
+    if (ProcRank != 0) {
+        for (int i = 1; i < Nodes - 1; i++) {
+            for (int j = 1; j < Nodes - 1; j++) {
+                cube[(1 * Nodes * Nodes) + (Nodes * j) + i] = finding_func_inside(1, j, i, cube, incremention, ProcNum, ProcRank);
+            }
+        }
+    }
+    if (ProcRank != ProcNum - 1) {
+        for (int z = 1; z < Nodes - 1; z++) {
+            for (int y = 1; y < Nodes - 1; y++) {
+                cube[((Nodes / ProcNum) * Nodes * Nodes) + (Nodes * y) + z] = finding_func_inside(Nodes / ProcNum, y, z, cube, incremention, ProcNum, ProcRank);
+            }
+        }
+    }
+}
+
+
+void non_board_calculations(int ProcNum, int ProcRank, double *cube, double incremention){
+    for (int x = (Nodes / ProcNum + 2) / 2; x > 1; x--) {
+        for (int y = 1; y < Nodes; y++) {
+            for (int z = 1; z < Nodes; z++) {
+                cube[x * Nodes * Nodes + y * Nodes + z] = finding_func_inside(x, y, z, cube, incremention, ProcNum, ProcRank);
+            }
+        }
+    }
+    for (int x = (Nodes / ProcNum + 2) / 2; x < Nodes / ProcNum; x++) {
+        for (int y = 1; y < Nodes; y++) {
+            for (int z = 1; z < Nodes; z++) {
+                cube[x * Nodes * Nodes + y * Nodes + z] = finding_func_inside(x, y, z, cube, incremention, ProcNum, ProcRank);
+            }
+        }
+    }
+}
+
+
+void send_recv(int ProcNum, int ProcRank, double *cube, MPI_Request *snd_request, MPI_Request *rcv_request){
+    if (ProcRank != 0) {
+        MPI_Isend(cube + (Nodes * Nodes), Nodes * Nodes, MPI_DOUBLE, ProcRank - 1, 0, MPI_COMM_WORLD, &snd_request[0]);
+        MPI_Irecv(cube, Nodes * Nodes, MPI_DOUBLE, ProcRank - 1, 1, MPI_COMM_WORLD, &rcv_request[1]);
+    }
+    if (ProcRank != ProcNum - 1) {
+        MPI_Isend(cube + (ProcNum / Nodes * Nodes * Nodes), Nodes * Nodes, MPI_DOUBLE, ProcRank + 1, 1, MPI_COMM_WORLD, &snd_request[1]);
+        MPI_Irecv(cube + (Nodes * Nodes * (ProcNum / Nodes + 1)), Nodes * Nodes, MPI_DOUBLE, ProcRank + 1, 0, MPI_COMM_WORLD, &rcv_request[0]);
+    }
+}
+
+
+void wait_for_all_procs(int ProcNum, int ProcRank, MPI_Request *snd_request, MPI_Request *rcv_request){
+    if (ProcRank != 0) {
+        MPI_Wait(&snd_request[0], MPI_STATUS_IGNORE);
+        MPI_Wait(&rcv_request[1], MPI_STATUS_IGNORE);
+    }
+    if (ProcRank != ProcNum - 1) {
+        MPI_Wait(&snd_request[1], MPI_STATUS_IGNORE);
+        MPI_Wait(&rcv_request[0], MPI_STATUS_IGNORE);
+    }
+}
 
 
 int main(int argc, char* argv[])
 {
     //loc vars for MPI and calculations
-    double start, end, check_value, diff_value, max_diff_value;
-    int local_stop_flag = 0;
-    int global_stop_flag = 0;
     int ProcNum, ProcRank;
-
     MPI_Init(&argc, &argv);
     MPI_Comm_size(MPI_COMM_WORLD, &ProcNum);
     MPI_Comm_rank(MPI_COMM_WORLD, &ProcRank);
@@ -101,90 +175,24 @@ int main(int argc, char* argv[])
 
 
     while(true){
-    //for (int i = 0; i < 4; ++i){
-        max_diff_value = 0;
-        //send receive bloc
-        if (ProcRank != 0) {
-            MPI_Isend(cube + (Nodes * Nodes), Nodes * Nodes, MPI_DOUBLE, ProcRank - 1, 0, MPI_COMM_WORLD, &snd_request[0]);
-            MPI_Irecv(cube, Nodes * Nodes, MPI_DOUBLE, ProcRank - 1, 1, MPI_COMM_WORLD, &rcv_request[1]);
-        }
-        if (ProcRank != ProcNum - 1) {
-            MPI_Isend(cube + (ProcNum / Nodes * Nodes * Nodes), Nodes * Nodes, MPI_DOUBLE, ProcRank + 1, 1, MPI_COMM_WORLD, &snd_request[1]);
-            MPI_Irecv(cube + (Nodes * Nodes * (ProcNum / Nodes + 1)), Nodes * Nodes, MPI_DOUBLE, ProcRank + 1, 0, MPI_COMM_WORLD, &rcv_request[0]);
-        }
+        send_recv(ProcNum, ProcRank, cube, &snd_request[0], &rcv_request[0]);//send receive bloc
+        non_board_calculations(ProcNum, ProcRank, cube, incremention);//calculate bloc
+        wait_for_all_procs(ProcNum, ProcRank, &snd_request[0], &rcv_request[0]);//wait bloc
+        board_calculations(ProcNum, ProcRank, cube, incremention);//calculate bloc 2 (boarders)
 
-        //calculate bloc
-        for (int x = (Nodes / ProcNum + 2) / 2; x > 1; x--) {
-            for (int y = 1; y < Nodes; y++) {
-                for (int z = 1; z < Nodes; z++) {
-                    cube[x * Nodes * Nodes + y * Nodes + z] = finding_func_inside(x, y, z, cube, incremention, ProcNum, ProcRank);
-                }
-            }
-        }
-        for (int x = (Nodes / ProcNum + 2) / 2; x < Nodes / ProcNum; x++) {
-            for (int y = 1; y < Nodes; y++) {
-                for (int z = 1; z < Nodes; z++) {
-                    cube[x * Nodes * Nodes + y * Nodes + z] = finding_func_inside(x, y, z, cube, incremention, ProcNum, ProcRank);
-                }
-            }
-        }
-
-
-        //wait bloc
-        if (ProcRank != 0) {
-            MPI_Wait(&snd_request[0], MPI_STATUS_IGNORE);
-            MPI_Wait(&rcv_request[1], MPI_STATUS_IGNORE);
-        }
-        if (ProcRank != ProcNum - 1) {
-            MPI_Wait(&snd_request[1], MPI_STATUS_IGNORE);
-            MPI_Wait(&rcv_request[0], MPI_STATUS_IGNORE);
-        }
-
-
-
-        //calculate bloc 2 (boarders)
-        if (ProcRank != 0) {
-            for (int i = 1; i < Nodes - 1; i++) {
-                for (int j = 1; j < Nodes - 1; j++) {
-                    cube[(1 * Nodes * Nodes) + (Nodes * j) + i] = finding_func_inside(1, j, i, cube, incremention, ProcNum, ProcRank);
-                }
-            }
-        }
-        if (ProcRank != ProcNum - 1) {
-            for (int z = 1; z < Nodes - 1; z++) {
-                for (int y = 1; y < Nodes - 1; y++) {
-                    cube[((Nodes / ProcNum) * Nodes * Nodes) + (Nodes * y) + z] = finding_func_inside(Nodes / ProcNum, y, z, cube, incremention, ProcNum, ProcRank);
-                }
-            }
-        }
-
-
-        //check bloc
-        for (int i = 0; i < (Nodes / ProcNum + 2) * Nodes * Nodes; ++i){//need borders to check
-            if (cube[i] != 0) {
-                diff_value = fabs(cube_old[i] - cube[i]);
-                if (diff_value > max_diff_value)
-                    max_diff_value = diff_value;
-            }
-        }
-
-        if (max_diff_value < E) {
-            local_stop_flag = 0;
-        } else {
-            local_stop_flag = 1;
-        }
-        MPI_Allreduce(&local_stop_flag, &global_stop_flag, 1, MPI_INT, MPI_MAX,
-                      MPI_COMM_WORLD);
-        if (global_stop_flag == 0) {
+        if (check(ProcNum, cube, cube_old))//check bloc
             break;
-        }
 
-
-        //reset old cube
-        for (int i = 0; i < (Nodes / ProcNum + 2) * Nodes * Nodes; ++i)
+        for (int i = 0; i < (Nodes / ProcNum + 2) * Nodes * Nodes; ++i)//reset old cube
             cube_old[i] = cube[i];
     }
 
+
+    if (ProcRank != 0)
+        for (int i = 0; i < (Nodes / ProcNum + 2) * Nodes * Nodes; ++i) {
+            std::cout << cube[i] << " ";
+        }
+    std::cout << std::endl;
 
     free(cube);
     free(cube_old);

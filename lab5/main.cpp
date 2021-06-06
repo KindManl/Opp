@@ -27,7 +27,7 @@ double GlobalRes = 0;   // global result
 
 void InitTasks(int *tasksArray, int numTasks, int iterCounter) {//non random weight of task now
     for (int i = 0; i < numTasks; i++) {
-        tasksArray[i] = abs(50 - i % 100) * abs(rank - (iterCounter % numProcesses)) * W;
+        tasksArray[i] = abs(50 - i % 100) * abs(ProcRank - (iterCounter % ProcNum)) * W;
     }
 }
 
@@ -59,6 +59,15 @@ void TasksDistribution() {
     pthread_mutex_init(&mutex, NULL);
     createThreads();
     pthread_mutex_destroy(&mutex);
+}
+
+
+void* ExecuteRoutine(void* args){
+    //work
+}
+
+void* ReceiveRoutine(void* args){
+    //work
 }
 
 
@@ -99,13 +108,6 @@ int CreateThreads() {
     return 0;
 }
 
-void* ExecuteRoutine(void* args){
-    //work
-}
-
-void* ReceiveRoutine(void* args){
-    //work
-}
 
 int main(int argc, char **argv) {
 
@@ -118,7 +120,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    tasksDistribution();
+    TasksDistribution();
 
     MPI_Finalize();
 }

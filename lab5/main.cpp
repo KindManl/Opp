@@ -75,12 +75,12 @@ int CreateThreads() {
         return 1;
     }
 
-    if (pthread_create(&threads[0], &attrs, receiveStartRoutine, NULL)){//receive thread
+    if (pthread_create(&threads[0], &attrs, ReceiveRoutine, NULL)){//receive thread
         perror("COULD NOT CREATE RECEIVE-THREAD");
         return 1;
     }
 
-    if (pthread_create(&threads[1], &attrs, executeStartRoutine, NULL)){//execute thread
+    if (pthread_create(&threads[1], &attrs, ExecuteRoutine, NULL)){//execute thread
         perror("COULD NOT CREATE EXECUTE-THREAD");
         return 1;
     }

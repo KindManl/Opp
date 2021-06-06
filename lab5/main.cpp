@@ -8,7 +8,7 @@
 #define W 10 // weight parameter
 #define NUM_LISTS 3 // number of lists
 #define NUM_TASKS 100   // number of tasks per process
-#define NUM_TASKS_TO_SHARE 10
+#define NUM_TASKS_TO_SHARE 6
 
 //for threads
 pthread_t threads[2];  // thread-descriptors: recv & exec
@@ -94,6 +94,7 @@ void* ExecuteRoutine(void* args){
     return NULL;
 }
 
+
 void* ReceiveRoutine(void* args){
     int ShareTasks, requestRank;
     MPI_Status status;
@@ -107,13 +108,19 @@ void* ReceiveRoutine(void* args){
 
 
         pthread_mutex_lock(&mutex);
-        if (RemainingTasks > NUM_TASKS_TO_SHARE) {
+        if (RemainingTasks > NUM_TASKS_TO_SHARE) {// >6
             ShareTasks = RemainingTasks / 2;
             RemainingTasks -= ShareTasks;
 
             MPI_Send(&ShareTasks, 1, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
             MPI_Send(&tasks[ShareTasks - 1], ShareTasks, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
-        } else {
+        } else if (RemainingTasks > NUM_TASKS_TO_SHARE / 2){// >3
+            ShareTasks = 1;
+            RemainingTasks --;
+
+            MPI_Send(&ShareTasks, 1, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
+            MPI_Send(&tasks[ShareTasks - 1], ShareTasks, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
+        } else{
             ShareTasks = 0;
             MPI_Send(&ShareTasks, 1, MPI_INT, status.MPI_SOURCE, 1, MPI_COMM_WORLD);
         }
